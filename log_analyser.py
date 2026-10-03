@@ -6,6 +6,8 @@ It reads an SSH-style auth log and looks for:
   3. Possible compromise   - a successful login right after a brute-force burst
 
 Usage:  python log_analyser.py sample_logs/auth.log
+        python log_analyser.py sample_logs/windows_security.csv
+        python log_analyser.py auth.log --learn --geoip --top 3 --json out.json --csv out.csv
         python log_analyser.py auth.log --threshold 5 --window 5 --night-start 0 --night-end 6
 """
 

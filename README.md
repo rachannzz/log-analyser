@@ -6,10 +6,12 @@ Built as a beginner cybersecurity portfolio project to practise log analysis, th
 
 ## Features
 
-- Parses SSH-style authentication logs with a regular expression
+- Parses **SSH-style auth logs** and **Windows Security event logs** (CSV export)
 - Sliding-window brute-force detection (configurable threshold and window)
-- Unusual-hour login detection (configurable "night" hours)
+- Unusual-hour login detection, either fixed night hours or **learned per-user normal hours** (`--learn`)
 - Correlates events: flags a successful login that follows a brute-force burst from the same IP
+- Optional **GeoIP lookup** of attacking IPs (`--geoip`)
+- **JSON and CSV export** of all alerts, plus `--top N` to focus on the worst offenders
 - Severity labels, a mini bar chart and a final summary with recommended actions
 - Pure Python 3 standard library, with nothing to install
 
@@ -19,7 +21,8 @@ Built as a beginner cybersecurity portfolio project to practise log analysis, th
 log-analyser/
 ├── log_analyser.py          # the analyser (main tool)
 ├── generate_sample_logs.py  # creates realistic fake logs for testing
-├── sample_logs/auth.log     # generated sample data
+├── sample_logs/auth.log              # generated SSH sample data
+├── sample_logs/windows_security.csv  # generated Windows sample data
 └── README.md
 ```
 
@@ -43,21 +46,59 @@ python log_analyser.py sample_logs/auth.log
 | `--window` | `5` | Time window in minutes for counting those failures |
 | `--night-start` | `0` | First hour (0-23) considered unusual |
 | `--night-end` | `6` | Hour at which the unusual period ends (exclusive) |
+| `--learn` | off | Learn each user's normal hours instead of using fixed night hours |
+| `--top N` | all | Only show the N worst brute-force sources |
+| `--geoip` | off | Look up country/city/ISP of attacking IPs (see privacy note below) |
+| `--json FILE` | none | Also save all alerts to a JSON file |
+| `--csv FILE` | none | Also save all alerts to a CSV file |
+| `--format` | `auto` | `ssh` or `windows`; `auto` treats `.csv` files as Windows |
 
-Example, with stricter rules:
+Examples:
 
 ```bash
+# Stricter rules
 python log_analyser.py sample_logs/auth.log --threshold 3 --window 2 --night-start 22 --night-end 6
+
+# Windows Security log
+python log_analyser.py sample_logs/windows_security.csv
+
+# Learned hours, top 3 attackers, save results
+python log_analyser.py sample_logs/auth.log --learn --top 3 --json alerts.json --csv alerts.csv
 ```
 
-### Expected log format
+### `--learn` vs fixed night hours
+Fixed hours flag *anyone* who logs in at night, including legitimate night-shift staff. With `--learn`, the tool builds each user's normal hours from their own successful logins and only flags logins far from that pattern (more than 3 hours from all their other logins; users with fewer than 3 logins are skipped). On the sample log, the fixed rule raises 3 false alarms about night-shift user `frank`, and `--learn` doesn't.
+
+### GeoIP privacy note
+`--geoip` sends public attacker IPs to the free service [ip-api.com](https://ip-api.com) over HTTP. Private/reserved addresses are never sent, and it is off by default. Don't use it on logs where even the IPs are sensitive. The sample logs only contain reserved addresses, so they show "private/reserved address".
+
+### Expected log formats
+
+**SSH-style text log:**
 
 ```
 2026-10-01 03:12:44 sshd[1234]: Failed password for admin from 203.0.113.45 port 51234
 2026-10-01 09:02:10 sshd[2001]: Accepted password for alice from 198.51.100.10 port 40022
 ```
 
-Lines that don't match are skipped. To support another format (for example the real `/var/log/auth.log`, which has no year), adjust `LINE_PATTERN` in `log_analyser.py`.
+Lines that don't match are skipped. To support another text format (for example the real `/var/log/auth.log`, which has no year), adjust `LINE_PATTERN` in `log_analyser.py`.
+
+**Windows Security log (CSV):** columns `TimeCreated, EventId, TargetUserName, IpAddress`. Event 4625 is a failed logon and 4624 is a successful one. You can export your own from an elevated PowerShell:
+
+```powershell
+Get-WinEvent -FilterHashtable @{LogName='Security'; Id=4624,4625} -MaxEvents 5000 |
+  ForEach-Object {
+    $x = [xml]$_.ToXml()
+    $d = @{}; $x.Event.EventData.Data | ForEach-Object { $d[$_.Name] = $_.'#text' }
+    [pscustomobject]@{
+      TimeCreated    = $_.TimeCreated.ToString('yyyy-MM-dd HH:mm:ss')
+      EventId        = $_.Id
+      TargetUserName = $d['TargetUserName']
+      IpAddress      = $d['IpAddress']
+    }
+  } | Export-Csv security.csv -NoTypeInformation
+python log_analyser.py security.csv
+```
 
 ## What it detects and why it matters
 
@@ -78,23 +119,26 @@ Lines that don't match are skipped. To support another format (for example the r
 
 ## About the sample data
 
-`generate_sample_logs.py` builds three days of fake traffic with a fixed random seed, so the results are repeatable. It contains:
+`generate_sample_logs.py` builds three days of fake traffic with a fixed random seed, so the results are repeatable. `auth.log` contains:
 
 - Normal staff logins in office hours, with the odd typo
 - A fast brute-force attack on `admin` / `root`
 - A slower password-spraying attack across common usernames
 - An attacker who eventually guesses `carol`'s password (the compromise case)
-- Two logins at odd hours
+- Two odd-hour logins by `dave` and `bob`
+- A night-shift worker (`frank`) who always logs in around 2 a.m.
 - Harmless background noise (single failures)
+
+`windows_security.csv` has a brute-force burst on `Administrator` that ends in a successful logon, plus normal logons and one odd-hour logon.
 
 All IPs are from reserved documentation ranges (RFC 5737), so none belong to real systems.
 
 ## Limitations and ideas for improvement
 
-- Only analyses one log format; add parsers for Windows Event Logs or web server logs
-- Fixed time-of-day rule; a smarter version would learn each user's normal hours
-- No GeoIP or threat-intelligence lookups on source IPs
-- Could export results as JSON/CSV or HTML
+- Two log formats only; add parsers for web server logs, firewall logs or the raw `.evtx` format
+- `--learn` is a simple heuristic and needs a few logins per user; a real system would use longer baselines
+- GeoIP uses one free service; threat-intelligence reputation lookups (e.g. AbuseIPDB) would add context
+- Could also export an HTML report or send alerts by email
 
 ## Disclaimer
 
