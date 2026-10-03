@@ -12,9 +12,11 @@ Usage:  python log_analyser.py sample_logs/auth.log
 import argparse
 import csv
 import json
+import ipaddress
 import os
 import re
 import sys
+import urllib.request
 from collections import defaultdict
 from datetime import datetime, timedelta
 
@@ -173,13 +175,43 @@ def find_compromises(events, brute_force):
     return hits
 
 
+# -------------------------------------------------------------------- geoip
+def lookup_ip(ip):
+    """Look up where an IP is (country, city, ISP) using the free ip-api.com service.
+
+    Private and reserved addresses are never sent anywhere. Any network problem
+    just returns a short message so the report still works offline.
+    """
+    try:
+        if ipaddress.ip_address(ip).is_private:
+            return "private/reserved address (not looked up)"
+    except ValueError:
+        return "not a valid IP address"
+    try:
+        url = f"http://ip-api.com/json/{ip}?fields=status,country,city,isp"
+        with urllib.request.urlopen(url, timeout=5) as response:
+            data = json.load(response)
+        if data.get("status") != "success":
+            return "no location found"
+        return f"{data['city']}, {data['country']} ({data['isp']})"
+    except Exception:  # no internet, rate limited, etc.
+        return "lookup failed"
+
+
+def add_locations(brute_force):
+    """Add a 'location' entry to every brute-force source."""
+    for ip, info in brute_force.items():
+        info["location"] = lookup_ip(ip)
+
+
 # -------------------------------------------------------------------- export
 def build_alerts(brute_force, compromises, odd_hours):
     """Flatten every finding into a simple list of dicts (easy to save as JSON/CSV)."""
     alerts = []
     for ip, b in brute_force.items():
         alerts.append({"type": "brute_force", "severity": severity(b["count"])[0], "ip": ip, "user": ", ".join(b["users"]),
-                       "time": b["first"].isoformat(sep=" "), "details": f"{b['count']} failures until {b['last']:%H:%M:%S}"})
+                       "time": b["first"].isoformat(sep=" "), "details": f"{b['count']} failures until {b['last']:%H:%M:%S}"
+                                  + (f"; location: {b['location']}" if "location" in b else "")})
     for e in compromises:
         alerts.append({"type": "possible_compromise", "severity": "CRITICAL", "ip": e["ip"], "user": e["user"],
                        "time": e["time"].isoformat(sep=" "), "details": "successful login after brute-force burst"})
@@ -241,6 +273,8 @@ def print_report(path, events, brute_force, odd_hours, compromises, args):
             print(f"   {colour}{bar(b['count'], biggest)}{RESET} {b['count']} failures "
                   f"between {b['first']:%H:%M:%S} and {b['last']:%H:%M:%S} on {b['first']:%Y-%m-%d}")
             print(f"   {DIM}accounts targeted:{RESET} {', '.join(b['users'])}")
+            if "location" in b:
+                print(f"   {DIM}location:{RESET} 🌍 {b['location']}")
         if args.top and len(ranked) > args.top:
             print(f"{DIM}... and {len(ranked) - args.top} more source(s) hidden by --top {args.top}{RESET}")
     else:
@@ -289,6 +323,8 @@ def main():
     parser.add_argument("--top", type=int, default=None, help="only show the N worst brute-force sources")
     parser.add_argument("--format", choices=["auto", "ssh", "windows"], default="auto",
                         help="log format: ssh text log or Windows Security CSV (default: guess from extension)")
+    parser.add_argument("--geoip", action="store_true",
+                        help="look up the country/ISP of attacking IPs (sends public IPs to ip-api.com)")
     parser.add_argument("--json", metavar="FILE", help="also save the alerts to a JSON file")
     parser.add_argument("--csv", metavar="FILE", help="also save the alerts to a CSV file")
     args = parser.parse_args()
@@ -307,6 +343,8 @@ def main():
     else:
         odd_hours = find_unusual_hours(events, args.night_start, args.night_end)
     compromises = find_compromises(events, brute_force)
+    if args.geoip:
+        add_locations(brute_force)
     print_report(args.logfile, events, brute_force, odd_hours, compromises, args)
     export_alerts(build_alerts(brute_force, compromises, odd_hours), args.json, args.csv)
 
