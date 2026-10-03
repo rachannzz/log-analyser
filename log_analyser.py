@@ -10,6 +10,8 @@ Usage:  python log_analyser.py sample_logs/auth.log
 """
 
 import argparse
+import csv
+import json
 import os
 import re
 import sys
@@ -115,6 +117,36 @@ def find_compromises(events, brute_force):
     return hits
 
 
+# -------------------------------------------------------------------- export
+def build_alerts(brute_force, compromises, odd_hours):
+    """Flatten every finding into a simple list of dicts (easy to save as JSON/CSV)."""
+    alerts = []
+    for ip, b in brute_force.items():
+        alerts.append({"type": "brute_force", "severity": severity(b["count"])[0], "ip": ip, "user": ", ".join(b["users"]),
+                       "time": b["first"].isoformat(sep=" "), "details": f"{b['count']} failures until {b['last']:%H:%M:%S}"})
+    for e in compromises:
+        alerts.append({"type": "possible_compromise", "severity": "CRITICAL", "ip": e["ip"], "user": e["user"],
+                       "time": e["time"].isoformat(sep=" "), "details": "successful login after brute-force burst"})
+    for e in odd_hours:
+        alerts.append({"type": "unusual_hour_login", "severity": "LOW", "ip": e["ip"], "user": e["user"],
+                       "time": e["time"].isoformat(sep=" "), "details": "login outside normal hours"})
+    return alerts
+
+
+def export_alerts(alerts, json_path, csv_path):
+    """Write the alerts to a JSON and/or CSV file if the user asked for them."""
+    if json_path:
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(alerts, f, indent=2)
+        print(f"{GREEN}✔ Saved {len(alerts)} alert(s) to {json_path}{RESET}")
+    if csv_path:
+        with open(csv_path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=["type", "severity", "ip", "user", "time", "details"])
+            writer.writeheader()
+            writer.writerows(alerts)
+        print(f"{GREEN}✔ Saved {len(alerts)} alert(s) to {csv_path}{RESET}")
+
+
 # ------------------------------------------------------------------- report
 def severity(count):
     """Turn a failure count into a label and colour."""
@@ -197,6 +229,8 @@ def main():
     parser.add_argument("--night-start", type=int, default=0, help="first 'unusual' hour, 0-23 (default 0)")
     parser.add_argument("--night-end", type=int, default=6, help="hour unusual period ends (default 6)")
     parser.add_argument("--top", type=int, default=None, help="only show the N worst brute-force sources")
+    parser.add_argument("--json", metavar="FILE", help="also save the alerts to a JSON file")
+    parser.add_argument("--csv", metavar="FILE", help="also save the alerts to a CSV file")
     args = parser.parse_args()
 
     try:
@@ -209,6 +243,7 @@ def main():
     odd_hours = find_unusual_hours(events, args.night_start, args.night_end)
     compromises = find_compromises(events, brute_force)
     print_report(args.logfile, events, brute_force, odd_hours, compromises, args)
+    export_alerts(build_alerts(brute_force, compromises, odd_hours), args.json, args.csv)
 
 
 if __name__ == "__main__":
