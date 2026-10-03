@@ -84,3 +84,29 @@ with open("sample_logs/auth.log", "w") as f:
     f.write("\n".join(text for _, text in lines) + "\n")
 
 print(f"Wrote {len(lines)} log lines to sample_logs/auth.log")
+
+# ---------------------------------------------------------------- Windows sample
+# A short Windows Security log in the CSV shape produced by the export command in the README.
+# Event 4625 = failed logon, 4624 = successful logon.
+win_rows = []
+
+
+def add_win(when, event_id, user, ip):
+    win_rows.append((when, event_id, user, ip))
+
+
+t = START + timedelta(days=1, hours=10, minutes=20)
+for i in range(25):  # brute force against the Administrator account
+    add_win(t + timedelta(seconds=i * 4), 4625, "Administrator", "203.0.113.50")
+add_win(t + timedelta(seconds=140), 4624, "Administrator", "203.0.113.50")  # ...and it works
+for user in ["alice", "bob"]:  # ordinary logins
+    for day in range(3):
+        add_win(START + timedelta(days=day, hours=9, minutes=random.randint(0, 40)), 4624, user, "198.51.100.20")
+add_win(START + timedelta(days=2, hours=4, minutes=5), 4624, "bob", "198.51.100.20")  # odd hour
+
+win_rows.sort()
+with open("sample_logs/windows_security.csv", "w", encoding="utf-8", newline="") as f:
+    f.write("TimeCreated,EventId,TargetUserName,IpAddress\n")
+    for when, event_id, user, ip in win_rows:
+        f.write(f"{when:%Y-%m-%d %H:%M:%S},{event_id},{user},{ip}\n")
+print(f"Wrote {len(win_rows)} events to sample_logs/windows_security.csv")

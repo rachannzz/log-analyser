@@ -51,8 +51,35 @@ LINE_PATTERN = re.compile(
 )
 
 
-def parse_log(path):
-    """Read the file and return a list of events (dicts). Unreadable lines are skipped."""
+def parse_windows_csv(path):
+    """Read Windows Security events exported to CSV (see README for the export command).
+
+    Event 4625 = failed logon, event 4624 = successful logon.
+    Needed columns: TimeCreated, EventId, TargetUserName, IpAddress.
+    """
+    events = []
+    with open(path, encoding="utf-8-sig", newline="") as f:  # utf-8-sig handles PowerShell's BOM
+        for row in csv.DictReader(f):
+            if row["EventId"] not in ("4624", "4625"):
+                continue  # ignore every other kind of Windows event
+            events.append({
+                "time": datetime.strptime(row["TimeCreated"][:19], "%Y-%m-%d %H:%M:%S"),
+                "success": row["EventId"] == "4624",
+                "user": row["TargetUserName"],
+                "ip": row["IpAddress"],
+            })
+    return events
+
+
+def parse_log(path, log_format="auto"):
+    """Pick the right parser. 'auto' guesses from the file extension (.csv = Windows)."""
+    if log_format == "windows" or (log_format == "auto" and path.lower().endswith(".csv")):
+        return parse_windows_csv(path)
+    return parse_ssh_log(path)
+
+
+def parse_ssh_log(path):
+    """Read an SSH-style log and return a list of events (dicts). Unreadable lines are skipped."""
     events = []
     with open(path, encoding="utf-8", errors="replace") as f:
         for line in f:
@@ -260,14 +287,18 @@ def main():
     parser.add_argument("--learn", action="store_true",
                         help="learn each user's normal hours instead of using fixed night hours")
     parser.add_argument("--top", type=int, default=None, help="only show the N worst brute-force sources")
+    parser.add_argument("--format", choices=["auto", "ssh", "windows"], default="auto",
+                        help="log format: ssh text log or Windows Security CSV (default: guess from extension)")
     parser.add_argument("--json", metavar="FILE", help="also save the alerts to a JSON file")
     parser.add_argument("--csv", metavar="FILE", help="also save the alerts to a CSV file")
     args = parser.parse_args()
 
     try:
-        events = parse_log(args.logfile)
+        events = parse_log(args.logfile, args.format)
     except FileNotFoundError:
         sys.exit(f"Error: file not found: {args.logfile}")
+    except (KeyError, ValueError):
+        sys.exit("Error: could not read the file. Check it matches the expected format (see README).")
 
     events.sort(key=lambda e: e["time"])
     brute_force = find_brute_force(events, args.threshold, args.window)
