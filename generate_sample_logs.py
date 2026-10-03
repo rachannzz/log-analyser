@@ -72,6 +72,11 @@ for _ in range(6):
     when = START + timedelta(days=random.randint(0, 2), hours=random.randint(8, 18), minutes=random.randint(0, 59))
     add(when, "Failed", random.choice(USERS), f"192.0.2.{random.randint(100, 200)}")
 
+# 7. A night-shift worker: frank always logs in around 2am. Normal for him, but a
+#    fixed "night hours" rule flags it, while `--learn` correctly learns it is normal.
+for day in range(3):
+    add(START + timedelta(days=day, hours=2, minutes=random.randint(0, 40)), "Accepted", "frank", "198.51.100.15")
+
 # Sort by time, then write the file.
 lines.sort(key=lambda pair: pair[0])
 os.makedirs("sample_logs", exist_ok=True)

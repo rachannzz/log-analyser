@@ -108,6 +108,35 @@ def find_unusual_hours(events, night_start, night_end):
     return [e for e in events if e["success"] and night_start <= e["time"].hour < night_end]
 
 
+def hour_gap(a, b):
+    """Distance between two hours of the day, wrapping round midnight (23h and 1h are 2 apart)."""
+    diff = abs(a - b)
+    return min(diff, 24 - diff)
+
+
+def find_user_anomalies(events, max_gap=3, min_logins=3):
+    """Learn each user's normal hours and flag logins far away from all their other logins.
+
+    A login is odd if it is more than `max_gap` hours from every other successful
+    login by the same user. Users with fewer than `min_logins` logins are skipped,
+    because there is not enough history to know what is normal.
+    """
+    logins_by_user = defaultdict(list)
+    for e in events:
+        if e["success"]:
+            logins_by_user[e["user"]].append(e)
+
+    odd = []
+    for logins in logins_by_user.values():
+        if len(logins) < min_logins:
+            continue
+        for i, e in enumerate(logins):
+            others = [o["time"].hour for j, o in enumerate(logins) if j != i]
+            if min(hour_gap(e["time"].hour, h) for h in others) > max_gap:
+                odd.append(e)
+    return sorted(odd, key=lambda e: e["time"])
+
+
 def find_compromises(events, brute_force):
     """A success from an IP that was also brute-forcing = likely a breach."""
     hits = []
@@ -171,8 +200,8 @@ def print_report(path, events, brute_force, odd_hours, compromises, args):
           f"({GREEN}{successes} successful{RESET}, {RED}{len(events) - successes} failed{RESET})")
     if events:
         print(f"{DIM}Time range:{RESET} {events[0]['time']:%Y-%m-%d %H:%M} → {events[-1]['time']:%Y-%m-%d %H:%M}")
-    print(f"{DIM}Rules:{RESET} ≥{args.threshold} failures within {args.window} min  |  "
-          f"night = {args.night_start:02d}:00–{args.night_end:02d}:00")
+    hours_rule = "learned per-user hours" if args.learn else f"night = {args.night_start:02d}:00–{args.night_end:02d}:00"
+    print(f"{DIM}Rules:{RESET} ≥{args.threshold} failures within {args.window} min  |  {hours_rule}")
 
     # --- Brute force
     section(f"BRUTE-FORCE ATTEMPTS  ({len(brute_force)} source(s))", RED)
@@ -228,6 +257,8 @@ def main():
     parser.add_argument("--window", type=int, default=5, help="time window in minutes (default 5)")
     parser.add_argument("--night-start", type=int, default=0, help="first 'unusual' hour, 0-23 (default 0)")
     parser.add_argument("--night-end", type=int, default=6, help="hour unusual period ends (default 6)")
+    parser.add_argument("--learn", action="store_true",
+                        help="learn each user's normal hours instead of using fixed night hours")
     parser.add_argument("--top", type=int, default=None, help="only show the N worst brute-force sources")
     parser.add_argument("--json", metavar="FILE", help="also save the alerts to a JSON file")
     parser.add_argument("--csv", metavar="FILE", help="also save the alerts to a CSV file")
@@ -240,7 +271,10 @@ def main():
 
     events.sort(key=lambda e: e["time"])
     brute_force = find_brute_force(events, args.threshold, args.window)
-    odd_hours = find_unusual_hours(events, args.night_start, args.night_end)
+    if args.learn:
+        odd_hours = find_user_anomalies(events)
+    else:
+        odd_hours = find_unusual_hours(events, args.night_start, args.night_end)
     compromises = find_compromises(events, brute_force)
     print_report(args.logfile, events, brute_force, odd_hours, compromises, args)
     export_alerts(build_alerts(brute_force, compromises, odd_hours), args.json, args.csv)

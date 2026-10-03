@@ -1,3 +1,4 @@
+2026-10-01 02:16:00 sshd[2891]: Accepted password for frank from 198.51.100.15 port 37014
 2026-10-01 03:47:00 sshd[2343]: Accepted password for dave from 198.51.100.13 port 57474
 2026-10-01 08:28:00 sshd[1106]: Accepted password for erin from 198.51.100.14 port 40463
 2026-10-01 10:01:00 sshd[9928]: Accepted password for dave from 198.51.100.13 port 57493
@@ -10,6 +11,7 @@
 2026-10-01 18:41:00 sshd[6180]: Failed password for carol from 192.0.2.158 port 34754
 2026-10-01 18:52:00 sshd[2697]: Failed password for erin from 192.0.2.138 port 38800
 2026-10-02 01:15:00 sshd[9565]: Accepted password for bob from 198.51.100.11 port 50733
+2026-10-02 02:35:00 sshd[3546]: Accepted password for frank from 198.51.100.15 port 47848
 2026-10-02 08:34:40 sshd[6925]: Failed password for dave from 198.51.100.13 port 42601
 2026-10-02 08:35:00 sshd[2139]: Accepted password for dave from 198.51.100.13 port 33003
 2026-10-02 08:46:00 sshd[3045]: Accepted password for carol from 198.51.100.12 port 54807
@@ -59,6 +61,7 @@
 2026-10-02 14:06:51 sshd[7596]: Failed password for admin from 203.0.113.45 port 52236
 2026-10-02 14:06:54 sshd[5073]: Failed password for admin from 203.0.113.45 port 42556
 2026-10-02 14:06:57 sshd[9786]: Failed password for admin from 203.0.113.45 port 59400
+2026-10-03 02:18:00 sshd[4450]: Accepted password for frank from 198.51.100.15 port 52471
 2026-10-03 02:30:00 sshd[7912]: Failed password for oracle from 203.0.113.77 port 42025
 2026-10-03 02:30:20 sshd[8579]: Failed password for ubuntu from 203.0.113.77 port 46371
 2026-10-03 02:30:40 sshd[8260]: Failed password for test from 203.0.113.77 port 36416
