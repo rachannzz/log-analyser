@@ -146,12 +146,15 @@ def print_report(path, events, brute_force, odd_hours, compromises, args):
     section(f"BRUTE-FORCE ATTEMPTS  ({len(brute_force)} source(s))", RED)
     if brute_force:
         biggest = max(b["count"] for b in brute_force.values())
-        for ip, b in sorted(brute_force.items(), key=lambda kv: -kv[1]["count"]):
+        ranked = sorted(brute_force.items(), key=lambda kv: -kv[1]["count"])
+        for ip, b in ranked[:args.top]:  # args.top is None = show everything
             label, colour = severity(b["count"])
             print(f"{colour}{BOLD}[{label}]{RESET} {BOLD}{ip}{RESET}")
             print(f"   {colour}{bar(b['count'], biggest)}{RESET} {b['count']} failures "
                   f"between {b['first']:%H:%M:%S} and {b['last']:%H:%M:%S} on {b['first']:%Y-%m-%d}")
             print(f"   {DIM}accounts targeted:{RESET} {', '.join(b['users'])}")
+        if args.top and len(ranked) > args.top:
+            print(f"{DIM}... and {len(ranked) - args.top} more source(s) hidden by --top {args.top}{RESET}")
     else:
         print(f"{GREEN}✔ No brute-force activity detected.{RESET}")
 
@@ -193,6 +196,7 @@ def main():
     parser.add_argument("--window", type=int, default=5, help="time window in minutes (default 5)")
     parser.add_argument("--night-start", type=int, default=0, help="first 'unusual' hour, 0-23 (default 0)")
     parser.add_argument("--night-end", type=int, default=6, help="hour unusual period ends (default 6)")
+    parser.add_argument("--top", type=int, default=None, help="only show the N worst brute-force sources")
     args = parser.parse_args()
 
     try:
