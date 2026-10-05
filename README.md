@@ -10,6 +10,9 @@ Built as a beginner cybersecurity portfolio project to practise log analysis, th
 - Sliding-window brute-force detection (configurable threshold and window)
 - Unusual-hour login detection, either fixed night hours or **learned per-user normal hours** (`--learn`)
 - Correlates events: flags a successful login that follows a brute-force burst from the same IP
+- **Password-spraying detection**: one IP failing against many different accounts
+- **Most-targeted accounts** ranking and an **hourly histogram** of failed logins
+- **Allow-list** (`--allow`), **date filters** (`--since`/`--until`) and a **CI-friendly exit code** (`--fail-on-alert`)
 - Optional **GeoIP lookup** of attacking IPs (`--geoip`)
 - **JSON and CSV export** of all alerts, plus `--top N` to focus on the worst offenders
 - Severity labels, a mini bar chart and a final summary with recommended actions
@@ -49,6 +52,10 @@ python log_analyser.py sample_logs/auth.log
 | `--learn` | off | Learn each user's normal hours instead of using fixed night hours |
 | `--top N` | all | Only show the N worst brute-force sources |
 | `--geoip` | off | Look up country/city/ISP of attacking IPs (see privacy note below) |
+| `--spray-users N` | `4` | Distinct accounts from one IP (within `--window`) needed to flag password spraying |
+| `--allow IP/CIDR` | none | Ignore events from this IP or network; repeatable (e.g. `--allow 10.0.0.0/8`) |
+| `--since DATE` / `--until DATE` | none | Only analyse events in this `YYYY-MM-DD` range (`--until` is inclusive) |
+| `--fail-on-alert` | off | Exit code 1 if any alert, 2 if a possible compromise (for scripts/CI) |
 | `--json FILE` | none | Also save all alerts to a JSON file |
 | `--csv FILE` | none | Also save all alerts to a CSV file |
 | `--format` | `auto` | `ssh` or `windows`; `auto` treats `.csv` files as Windows |
@@ -107,12 +114,17 @@ python log_analyser.py security.csv
 
 **Why it matters:** Brute-forcing and password guessing are among the most common ways attackers try to get in. Internet-facing SSH, RDP and web logins are probed constantly. Spotting the burst lets you block the IP, add rate limiting or lockouts, and enforce MFA before a guess succeeds.
 
-### 2. Unusual-hour logins
+### 2. Password spraying
+**What:** One IP failing against several *different* accounts inside the window (default: 4 or more accounts).
+
+**Why it matters:** Spraying tries a few common passwords across many accounts to stay under per-account lockouts, so it can look harmless account by account. Grouping by source IP exposes it.
+
+### 3. Unusual-hour logins
 **What:** *Successful* logins between certain hours (default 00:00-06:00).
 
 **Why it matters:** Stolen credentials are often used outside working hours, when nobody is watching. A valid password at 3 a.m. is a classic sign of account takeover or an insider threat. It isn't proof on its own, since the user may be on a night shift or in another time zone, but it is worth a look.
 
-### 3. Possible compromise (correlation)
+### 4. Possible compromise (correlation)
 **What:** A successful login from an IP that was just brute-forcing.
 
 **Why it matters:** This is the most serious finding, because it suggests the attacker **got in**. It turns "someone is attacking us" into "someone may be inside", which is when you reset credentials, investigate and respond to an incident.
